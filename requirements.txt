@@ -1,0 +1,12 @@
+aiogram==3.10.0
+python-dotenv==1.0.0
+aiohttp==3.9.1
+numpy==1.24.3
+pandas==2.1.4
+matplotlib==3.8.2
+python-magic==0.4.27
+joblib==1.3.2
+# Windows uchun qo'shimcha
+python-magic-bin==0.4.14
+# O'rniga scikit-learn -> lightgbm yoki xgboost (agar AI kerak bo'lsa)
+# lightgbm==4.2.0
