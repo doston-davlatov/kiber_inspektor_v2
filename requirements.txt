@@ -1,7 +1,8 @@
 aiogram==3.13.1
 aiomysql==0.2.0
 virustotal-python==1.1.1
-scikit-learn==1.4.2          # ← 1.5.2 o'rniga 1.4.2 (Python 3.12 bilan 100% barqaror)
+numpy==1.26.4                # ← Bu Python 3.13 bilan barqaror va wheel bor
+scikit-learn==1.4.2          # ← 1.5.2 o‘rniga 1.4.2 (muammo bermaydi)
 joblib==1.4.2
 nltk==3.8.2
 python-dotenv==1.0.1
