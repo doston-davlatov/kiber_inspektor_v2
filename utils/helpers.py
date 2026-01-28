@@ -71,7 +71,7 @@ def is_admin(user_id: int) -> bool:
     return user_id in config.ADMIN_IDS
 
 
-def send_alert_to_admins(bot, message: str) -> None:
+def send_alert_to_admin(bot, message: str) -> None:
     """
     Barcha adminlarga xabar yuborish (masalan, xavfli holat yoki xato).
     """

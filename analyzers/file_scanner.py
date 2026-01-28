@@ -1,118 +1,104 @@
-# analyzers/file_scanner.py
-"""
-Fayl skanerlash: VirusTotal orqali hash tekshirish va zarur bo'lsa faylni upload qilish.
-"""
-
 import asyncio
 import hashlib
 import logging
 import os
 from typing import Dict, Any
-from virustotal_python import VirusTotalPublicApi, VirustotalError
+from virustotal_python import Virustotal
 from config import config
 
 logger = logging.getLogger(__name__)
 
-vt_client = VirusTotalPublicApi(config.VIRUSTOTAL_API_KEY) if config.VIRUSTOTAL_API_KEY else None
+# v3 API interfeysini ishga tushiramiz
+vt = Virustotal(API_KEY=config.VIRUSTOTAL_API_KEY, API_VERSION="v3") if config.VIRUSTOTAL_API_KEY else None
 
-def calculate_file_hash(file_path: str, algorithm: str = 'sha256') -> str:
-    """Fayl hashini hisoblash."""
-    hash_func = hashlib.new(algorithm)
+def calculate_file_hash(file_path: str) -> str:
+    """Faylning SHA256 hashini hisoblash."""
+    sha256_hash = hashlib.sha256()
     try:
         with open(file_path, "rb") as f:
-            for chunk in iter(lambda: f.read(4096), b""):
-                hash_func.update(chunk)
-        return hash_func.hexdigest()
+            for byte_block in iter(lambda: f.read(4096), b""):
+                sha256_hash.update(byte_block)
+        return sha256_hash.hexdigest()
     except Exception as e:
-        logger.error(f"Hash hisoblash xatosi: {e}")
+        logger.error(f"Hash hisoblashda xato: {e}")
         return ""
 
-
-async def scan_file(file_path: str, timeout: int = 60) -> Dict[str, Any]:
+async def scan_file(file_path: str) -> Dict[str, Any]:
     """
-    Faylni VirusTotal orqali tekshirish.
-    Natija: {'threat': 'Safe'/'Low'/'High'/'Unknown', 'positives': int, 'total': int, 'reason': str}
+    Faylni VirusTotal v3 API orqali tekshirish.
+    Hash orqali qidiradi, topilmasa upload qiladi.
     """
     if not os.path.exists(file_path):
         return {"threat": "Unknown", "positives": 0, "total": 0, "reason": "Fayl topilmadi"}
 
     result = {
-        "threat": "Unknown",
+        "threat": "Safe",
         "positives": 0,
         "total": 0,
-        "sha256": "",
-        "md5": "",
-        "reason": "",
-        "scan_id": None
+        "sha256": calculate_file_hash(file_path),
+        "reason": ""
     }
 
+    if not vt:
+        result["reason"] = "VirusTotal API kaliti sozlanmagan"
+        return result
+
     try:
-        # Hash hisoblash
-        sha256 = calculate_file_hash(file_path, 'sha256')
-        md5 = calculate_file_hash(file_path, 'md5')
-        result["sha256"] = sha256
-        result["md5"] = md5
+        # 1. Avval hash orqali bazadan qidirib ko'ramiz (juda tez)
+        try:
+            resp = vt.get_object(f"/files/{result['sha256']}")
+            stats = resp.get("data", {}).get("attributes", {}).get("last_analysis_stats", {})
+            
+            result["positives"] = stats.get("malicious", 0)
+            result["total"] = sum(stats.values())
+            
+        except Exception as e:
+            # 2. Agar bazada topilmasa (404), faylni yuklaymiz (upload)
+            if "404" in str(e):
+                logger.info(f"Fayl bazada yo'q, yuklanmoqda: {file_path}")
+                with open(file_path, "rb") as f:
+                    files = {"file": (os.path.basename(file_path), f)}
+                    upload_resp = vt.request("files", method="POST", files=files)
+                
+                # Yuklangandan keyin tahlil tayyor bo'lishi uchun kutish (bepul API uchun)
+                result["reason"] = "Fayl yangi, tahlil navbatga qo'yildi."
+                return result
+            else:
+                raise e
 
-        if vt_client:
-            # Reportni tekshirish
-            try:
-                report = vt_client.get_file_report(sha256)
-                if report and report.get("response_code") == 1:
-                    stats = report["results"]
-                    result["positives"] = stats.get("positives", 0)
-                    result["total"] = stats.get("total", 0)
-                    result["scan_id"] = stats.get("scan_id")
-                else:
-                    # Fayl VT da yo'q – upload qilish
-                    logger.info(f"Fayl VT da topilmadi, upload qilinmoqda: {file_path}")
-                    with open(file_path, "rb") as f:
-                        upload_resp = vt_client.scan_file(f, filename=os.path.basename(file_path))
-                    if upload_resp.get("response_code") == 1:
-                        result["scan_id"] = upload_resp["scan_id"]
-                        # Kutish va report olish
-                        await asyncio.sleep(30)  # VT vaqt talab qiladi
-                        report = vt_client.get_file_report(sha256)
-                        if report and report.get("response_code") == 1:
-                            stats = report["results"]
-                            result["positives"] = stats.get("positives", 0)
-                            result["total"] = stats.get("total", 0)
-            except VirustotalError as ve:
-                result["reason"] = f"VT xatosi: {str(ve)}"
-
-        # Yakuniy baho
-        positives = result["positives"]
-        if positives > 2:
+        # 3. Yakuniy baholash
+        if result["positives"] > 2:
             result["threat"] = "High"
-        elif positives > 0:
+        elif result["positives"] > 0:
             result["threat"] = "Low"
-        else:
-            result["threat"] = "Safe"
+        
+        result["reason"] = f"VT: {result['positives']}/{result['total']} xavf aniqladi."
 
-        result["reason"] = f"VT positives: {positives}/{result['total']}, SHA256: {sha256[:16]}..."
-
-    except asyncio.TimeoutError:
-        result["reason"] = "Timeout – VirusTotal javob bermadi"
     except Exception as e:
-        logger.error(f"Fayl scan xatosi: {e}", exc_info=True)
-        result["reason"] = f"Xato: {str(e)}"
+        logger.error(f"VT Scan xatosi: {e}")
+        result["threat"] = "Unknown"
+        result["reason"] = f"API xatosi: {str(e)}"
 
-    # Faylni o'chirish (temp fayllar uchun)
-    try:
-        os.remove(file_path)
-    except:
-        pass
+    finally:
+        # Temp faylni o'chirish (Kiber-inspektor botining asosiy logikasi uchun)
+        if os.path.exists(file_path):
+            try:
+                os.remove(file_path)
+                logger.info(f"Temp fayl o'chirildi: {file_path}")
+            except Exception as e:
+                logger.warning(f"Faylni o'chirishda xato: {e}")
 
     return result
 
-
-# Test uchun
+# Test qismi
 if __name__ == "__main__":
     async def test():
-        # Test fayl yaratish
-        test_path = "test_file.txt"
+        test_path = "test_virus_sample.txt"
         with open(test_path, "w") as f:
-            f.write("This is a test file")
+            f.write("X5O!P%@AP[4\\PZX54(P^)7CC)7}$EICAR-STANDARD-ANTIVIRUS-TEST-FILE!$H+H*")
+        
+        print("Skanerlash boshlandi...")
         res = await scan_file(test_path)
-        print(res)
+        print(f"Natija: {res}")
 
     asyncio.run(test())

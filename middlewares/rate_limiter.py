@@ -6,7 +6,7 @@ Har bir foydalanuvchi uchun N ta so'rov/min.
 
 import time
 from collections import defaultdict
-from typing import Callable, Dict, Any, Awaitable
+from typing import Callable, Dict, Any, Optional, Awaitable
 from aiogram import BaseMiddleware
 from aiogram.types import Message, TelegramObject
 from config import config

@@ -1,16 +1,16 @@
-# handlers/group_handlers.py
 """
 Guruh monitoringi: har bir xabarni avtomatik tahlil qilish,
-xavfli bo'lsa ogohlantirish yoki botni ban qilish.
+xavfli bo'lsa ogohlantirish.
 """
 
 import logging
 import asyncio
+import re  # 1. re moduli qo'shildi
 from typing import Optional
-from aiogram import Router, F
+from aiogram import Router, F, types
 from aiogram.types import Message
-from aiogram.filters import ChatTypeFilter
 
+# analyzers moduli ichidagi funksiyalar mavjudligini tekshiring
 from analyzers import analyze_text, scan_url, scan_file
 from db import db
 from config import config
@@ -20,17 +20,11 @@ logger = logging.getLogger(__name__)
 
 router = Router(name="group_handlers")
 
-# Faqat guruh va superguruhlar uchun ishlaydi
-router.message.filter(ChatTypeFilter(chat_types=["group", "supergroup"]))
-
-@router.message()
+# 2. Aiogram 3 uchun filtr o'zgartirildi
+@router.message(F.chat.type.in_({"group", "supergroup"}))
 async def group_message_handler(message: Message):
     """
-    Guruhdagi har bir xabarni tekshirish:
-    - Matn bo'lsa: scam/phishing aniqlash
-    - Havola bo'lsa: URL skan
-    - Fayl bo'lsa: fayl skan
-    Xavfli bo'lsa: ogohlantirish va loglash
+    Guruhdagi har bir xabarni tekshirish.
     """
     user_id = message.from_user.id
     chat_id = message.chat.id
@@ -42,51 +36,54 @@ async def group_message_handler(message: Message):
 
     threat_level = "Safe"
     reason = ""
-    is_file = False
 
     try:
-        # Fayl mavjud bo'lsa (rasm, video, hujjat va h.k.)
-        document = message.document or message.photo[-1] if message.photo else \
+        # Fayl mavjud bo'lsa
+        document = message.document or (message.photo[-1] if message.photo else None) or \
                    message.video or message.audio or message.voice
 
-        if document:
-            is_file = True
-            file_size = document.file_size
+        if document and hasattr(document, 'file_id'):
+            file_size = getattr(document, 'file_size', 0)
             if file_size > config.MAX_FILE_SIZE:
                 await message.reply("⚠️ Fayl juda katta, tekshirib bo'lmaydi!")
                 return
 
-            await message.reply("📁 Fayl tekshirilmoqda...")
+            status_msg = await message.reply("📁 Fayl tekshirilmoqda...")
 
             file_info = await message.bot.get_file(document.file_id)
-            downloaded_file = await message.bot.download_file(file_info.file_path)
-
-            temp_path = f"temp/{document.file_id}_{document.file_name or 'file'}"
-            with open(temp_path, "wb") as f:
-                f.write(downloaded_file.read())
+            
+            # Faylni saqlash uchun yo'l
+            file_name = getattr(document, 'file_name', f"file_{document.file_id}")
+            temp_path = f"{config.TEMP_DIR}/{document.file_id}_{file_name}"
+            
+            # 3. Faylni to'g'ri yuklab olish
+            await message.bot.download_file(file_info.file_path, destination=temp_path)
 
             result = await scan_file(temp_path)
             threat_level = result["threat"]
             reason = result["reason"]
 
             cleanup_temp_file(temp_path)
+            await status_msg.delete()
 
         # Matn yoki caption mavjud bo'lsa
-        elif text:
+        if text:
             # URL borligini tekshirish
             urls = re.findall(r'(https?://[^\s]+)', text)
             if urls:
-                await message.reply("🔗 Havola tekshirilmoqda...")
+                status_msg = await message.reply("🔗 Havola tekshirilmoqda...")
                 for url in urls:
                     url_result = await scan_url(url)
                     if url_result["threat"] in ["Low", "High"]:
                         threat_level = url_result["threat"]
                         reason += f"\nHavola: {url} → {url_result['reason']}"
+                await status_msg.delete()
 
             # Matnni scam uchun tahlil
             text_result = analyze_text(text)
             if text_result["threat"] in ["Low", "High"]:
-                threat_level = text_result["threat"]
+                if threat_level != "High": # High darajani tushirmaslik uchun
+                    threat_level = text_result["threat"]
                 reason += f"\nMatn tahlili: {text_result['reason']}"
 
         # Yakuniy harakat
@@ -99,7 +96,7 @@ async def group_message_handler(message: Message):
                 f"• Foydalanuvchi: @{message.from_user.username or message.from_user.id}\n"
                 f"• Xabar: {text[:150]}{'...' if len(text) > 150 else ''}"
             )
-            await message.reply(warning_text, disable_web_page_preview=True)
+            await message.reply(warning_text, parse_mode="HTML")
 
             # Loglash
             await db.log_message(
@@ -109,11 +106,5 @@ async def group_message_handler(message: Message):
                 threat_level=threat_level
             )
 
-            # Agar xavf yuqori bo'lsa va auto-ban yoqilgan bo'lsa (config da)
-            # if threat_level == "High" and config.AUTO_BAN_ENABLED:
-            #     await message.bot.ban_chat_member(chat_id, user_id)
-            #     await message.reply(f"🚫 {message.from_user.first_name} ban qilindi!")
-
     except Exception as e:
         logger.error(f"Guruh monitoring xatosi: {e}", exc_info=True)
-        # Foydalanuvchiga xabar bermaymiz, faqat loglaymiz
