@@ -5,7 +5,6 @@ from typing import List, Optional
 from dotenv import load_dotenv, find_dotenv
 
 # Lokalda .env fayli mavjud bo'lsa uni yuklaymiz
-# Cloud platformalarda (Render, Railway, Fly.io, Vercel va h.k.) .env bo'lmaydi → faqat env vars ishlatiladi
 env_path = find_dotenv(usecwd=True)
 if env_path:
     load_dotenv(env_path)
@@ -19,8 +18,8 @@ class Config:
     BOT_TOKEN: str
     MYSQL_HOST: str
     MYSQL_PORT: int
-    MYSQL_USER: str
-    MYSQL_PASSWORD: str
+    MYSQL_USER: Optional[str] = None
+    MYSQL_PASSWORD: Optional[str] = None          # ← endi ixtiyoriy
     MYSQL_DB: str
     VIRUSTOTAL_API_KEY: str
 
@@ -41,9 +40,9 @@ class Config:
 
         self.MYSQL_HOST     = os.getenv("MYSQL_HOST",     "127.0.0.1")
         self.MYSQL_PORT     = self._get_int("MYSQL_PORT",     3306)
-        self.MYSQL_USER     = self._get_required("MYSQL_USER")
-        self.MYSQL_PASSWORD = self._get_required("MYSQL_PASSWORD")
-        self.MYSQL_DB       = self._get_required("MYSQL_DB")   # yoki MYSQL_DATABASE
+        self.MYSQL_USER     = os.getenv("MYSQL_USER")           # ixtiyoriy, None bo'lishi mumkin
+        self.MYSQL_PASSWORD = os.getenv("MYSQL_PASSWORD")       # ← endi majburiy emas, None bo'lishi mumkin
+        self.MYSQL_DB       = self._get_required("MYSQL_DB")
 
         self.VIRUSTOTAL_API_KEY = self._get_required("VIRUSTOTAL_API_KEY")
 
@@ -64,7 +63,6 @@ class Config:
         self.RATE_LIMIT     = self._get_int("RATE_LIMIT",     10)
 
         self.LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO").upper()
-        # logging darajasini tekshirish
         if self.LOG_LEVEL not in ("DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"):
             self.LOG_LEVEL = "INFO"
 
@@ -76,10 +74,9 @@ class Config:
         model_path_str = os.getenv("MODEL_PATH", "models/scam_model.pkl")
         self.MODEL_PATH = Path(model_path_str)
 
-        # Webhook (Render va boshqa platformalar uchun)
+        # Webhook
         webhook_url = os.getenv("WEBHOOK_URL", "").strip()
         if webhook_url:
-            # oxirgi / ni olib tashlaymiz va to'g'ri formatga keltiramiz
             self.WEBHOOK_URL = webhook_url.rstrip("/") + "/"
         
         self.WEBHOOK_SECRET = os.getenv("WEBHOOK_SECRET")
@@ -93,19 +90,24 @@ class Config:
         return value
 
     def _get_int(self, key: str, default: int) -> int:
+        val = os.getenv(key)
+        if val is None:
+            return default
         try:
-            return int(os.getenv(key, str(default)))
+            return int(val)
         except (ValueError, TypeError):
-            raise ValueError(f"{key} integer bo'lishi kerak (hozirgi qiymat: {os.getenv(key)})")
+            raise ValueError(f"{key} integer bo'lishi kerak (hozirgi qiymat: {val})")
 
     def _get_float(self, key: str, default: float) -> float:
+        val = os.getenv(key)
+        if val is None:
+            return default
         try:
-            return float(os.getenv(key, str(default)))
+            return float(val)
         except (ValueError, TypeError):
-            raise ValueError(f"{key} float bo'lishi kerak")
+            raise ValueError(f"{key} float bo'lishi kerak (hozirgi qiymat: {val})")
 
     def _validate(self):
-        """Qo'shimcha validatsiyalar (masalan, port diapazoni, fayl yo'llari va h.k.)"""
         if not (1 <= self.MYSQL_PORT <= 65535):
             raise ValueError(f"MYSQL_PORT noto'g'ri: {self.MYSQL_PORT}")
 
@@ -115,9 +117,16 @@ class Config:
         if not 0.0 <= self.AI_THRESHOLD <= 1.0:
             raise ValueError(f"AI_THRESHOLD [0.0 .. 1.0] oralig'ida bo'lishi kerak, hozir: {self.AI_THRESHOLD}")
 
+        # Parol ixtiyoriy bo'lgani uchun qo'shimcha tekshiruv shart emas
+
     def __repr__(self):
         sensitive = {"BOT_TOKEN", "MYSQL_PASSWORD", "VIRUSTOTAL_API_KEY", "WEBHOOK_SECRET"}
-        attrs = {k: "****" if k in sensitive else v for k, v in self.__dict__.items()}
+        attrs = {}
+        for k, v in self.__dict__.items():
+            if k in sensitive and v is not None:
+                attrs[k] = "****"
+            else:
+                attrs[k] = v
         return f"Config({', '.join(f'{k}={v!r}' for k, v in attrs.items())})"
 
 
