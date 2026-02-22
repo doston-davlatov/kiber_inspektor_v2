@@ -1,49 +1,125 @@
 import os
-from typing import List
-from dotenv import load_dotenv
+import logging
 from pathlib import Path
+from typing import List, Optional
+from dotenv import load_dotenv, find_dotenv
 
-load_dotenv(dotenv_path=Path('.env'))
+# Lokalda .env fayli mavjud bo'lsa uni yuklaymiz
+# Cloud platformalarda (Render, Railway, Fly.io, Vercel va h.k.) .env bo'lmaydi → faqat env vars ishlatiladi
+env_path = find_dotenv(usecwd=True)
+if env_path:
+    load_dotenv(env_path)
+    print(f".env fayli yuklandi: {env_path}")
+else:
+    print("Lokal .env topilmadi → faqat system environment variables ishlatiladi")
 
 class Config:
-    """Bot konfiguratsiyasi: .env faylidan o'qiladi."""
-    
-    BOT_TOKEN: str = os.getenv("BOT_TOKEN")
-    if not BOT_TOKEN:
-        raise ValueError("BOT_TOKEN .env da topilmadi! BotFather orqali oling.")
-    
-    MYSQL_HOST: str = os.getenv("MYSQL_HOST", "localhost")
-    MYSQL_PORT: int = int(os.getenv("MYSQL_PORT", 3306))
-    MYSQL_USER: str = os.getenv("MYSQL_USER")
-    MYSQL_PASSWORD: str = os.getenv("MYSQL_PASSWORD")
-    MYSQL_DB: str = os.getenv("MYSQL_DB")
-    
-    VIRUSTOTAL_API_KEY: str = os.getenv("VIRUSTOTAL_API_KEY")
-    
-    ADMIN_IDS: List[int] = []
-    admin_str = os.getenv("ADMIN_IDS", "")
-    if admin_str:
-        try:
-            ADMIN_IDS = [int(id.strip()) for id in admin_str.split(",") if id.strip()]
-        except ValueError:
-            raise ValueError("ADMIN_IDS noto'g'ri formatda! Masalan: 123456,789012")
-    
-    MAX_FILE_SIZE: int = int(os.getenv("MAX_FILE_SIZE", 50000000))  # 50 MB default
-    AI_THRESHOLD: float = float(os.getenv("AI_THRESHOLD", 0.7))
-    RATE_LIMIT: int = int(os.getenv("RATE_LIMIT", 10))  # So'rovlar/min
-    LOG_LEVEL: str = os.getenv("LOG_LEVEL", "INFO")
-    
-    TEMP_DIR: str = os.getenv("TEMP_DIR", "temp/")  # Fayllar uchun temp papka
-    MODEL_PATH: str = os.getenv("MODEL_PATH", "models/scam_model.pkl")  # ML model yo'li
-    
-    # Qo'shimcha: Future-proof uchun webhook URL
-    WEBHOOK_URL: str = os.getenv("WEBHOOK_URL", None)  # Deploy uchun
-    
-    def __init__(self):
-        # Validation: Muhim qiymatlar borligini tekshirish
-        required = ["BOT_TOKEN", "MYSQL_USER", "MYSQL_DB", "VIRUSTOTAL_API_KEY"]
-        for key in required:
-            if not getattr(self, key, None):
-                raise ValueError(f"{key} .env da topilmadi!")
+    """Bot konfiguratsiyasi: .env yoki environment variables dan o'qiladi."""
 
+    BOT_TOKEN: str
+    MYSQL_HOST: str
+    MYSQL_PORT: int
+    MYSQL_USER: str
+    MYSQL_PASSWORD: str
+    MYSQL_DB: str
+    VIRUSTOTAL_API_KEY: str
+
+    ADMIN_IDS: List[int] = []
+    WEBHOOK_URL: Optional[str] = None
+    WEBHOOK_SECRET: Optional[str] = None
+
+    MAX_FILE_SIZE: int = 50 * 1024 * 1024          # 50 MB
+    AI_THRESHOLD: float = 0.70
+    RATE_LIMIT: int = 10                           # so'rov/min
+    LOG_LEVEL: str = "INFO"
+
+    TEMP_DIR: Path
+    MODEL_PATH: Path
+
+    def __init__(self):
+        self.BOT_TOKEN = self._get_required("BOT_TOKEN")
+
+        self.MYSQL_HOST     = os.getenv("MYSQL_HOST",     "127.0.0.1")
+        self.MYSQL_PORT     = self._get_int("MYSQL_PORT",     3306)
+        self.MYSQL_USER     = self._get_required("MYSQL_USER")
+        self.MYSQL_PASSWORD = self._get_required("MYSQL_PASSWORD")
+        self.MYSQL_DB       = self._get_required("MYSQL_DB")   # yoki MYSQL_DATABASE
+
+        self.VIRUSTOTAL_API_KEY = self._get_required("VIRUSTOTAL_API_KEY")
+
+        # Adminlar ro'yxati
+        admin_str = os.getenv("ADMIN_IDS", "").strip()
+        if admin_str:
+            try:
+                self.ADMIN_IDS = [
+                    int(x.strip()) for x in admin_str.split(",")
+                    if x.strip().isdigit()
+                ]
+            except ValueError as e:
+                raise ValueError(f"ADMIN_IDS noto'g'ri: {admin_str} → {e}")
+
+        # Qo'shimcha sozlamalar
+        self.MAX_FILE_SIZE  = self._get_int("MAX_FILE_SIZE",  50_000_000)
+        self.AI_THRESHOLD   = self._get_float("AI_THRESHOLD", 0.7)
+        self.RATE_LIMIT     = self._get_int("RATE_LIMIT",     10)
+
+        self.LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO").upper()
+        # logging darajasini tekshirish
+        if self.LOG_LEVEL not in ("DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"):
+            self.LOG_LEVEL = "INFO"
+
+        # Papkalar va fayllar
+        temp_dir_str = os.getenv("TEMP_DIR", "temp").rstrip("/")
+        self.TEMP_DIR = Path(temp_dir_str)
+        self.TEMP_DIR.mkdir(parents=True, exist_ok=True)
+
+        model_path_str = os.getenv("MODEL_PATH", "models/scam_model.pkl")
+        self.MODEL_PATH = Path(model_path_str)
+
+        # Webhook (Render va boshqa platformalar uchun)
+        webhook_url = os.getenv("WEBHOOK_URL", "").strip()
+        if webhook_url:
+            # oxirgi / ni olib tashlaymiz va to'g'ri formatga keltiramiz
+            self.WEBHOOK_URL = webhook_url.rstrip("/") + "/"
+        
+        self.WEBHOOK_SECRET = os.getenv("WEBHOOK_SECRET")
+
+        self._validate()
+
+    def _get_required(self, key: str) -> str:
+        value = os.getenv(key)
+        if not value:
+            raise ValueError(f"{key} muhim o'zgaruvchi .env yoki environmentda topilmadi!")
+        return value
+
+    def _get_int(self, key: str, default: int) -> int:
+        try:
+            return int(os.getenv(key, str(default)))
+        except (ValueError, TypeError):
+            raise ValueError(f"{key} integer bo'lishi kerak (hozirgi qiymat: {os.getenv(key)})")
+
+    def _get_float(self, key: str, default: float) -> float:
+        try:
+            return float(os.getenv(key, str(default)))
+        except (ValueError, TypeError):
+            raise ValueError(f"{key} float bo'lishi kerak")
+
+    def _validate(self):
+        """Qo'shimcha validatsiyalar (masalan, port diapazoni, fayl yo'llari va h.k.)"""
+        if not (1 <= self.MYSQL_PORT <= 65535):
+            raise ValueError(f"MYSQL_PORT noto'g'ri: {self.MYSQL_PORT}")
+
+        if self.MAX_FILE_SIZE < 1_000_000:
+            raise ValueError("MAX_FILE_SIZE juda kichik (kamida 1MB tavsiya etiladi)")
+
+        if not 0.0 <= self.AI_THRESHOLD <= 1.0:
+            raise ValueError(f"AI_THRESHOLD [0.0 .. 1.0] oralig'ida bo'lishi kerak, hozir: {self.AI_THRESHOLD}")
+
+    def __repr__(self):
+        sensitive = {"BOT_TOKEN", "MYSQL_PASSWORD", "VIRUSTOTAL_API_KEY", "WEBHOOK_SECRET"}
+        attrs = {k: "****" if k in sensitive else v for k, v in self.__dict__.items()}
+        return f"Config({', '.join(f'{k}={v!r}' for k, v in attrs.items())})"
+
+
+# Global instance
 config = Config()
