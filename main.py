@@ -46,39 +46,43 @@ async def on_shutdown(bot: Bot):
     logger.info("Webhook o'chirildi va bot to'xtadi")
 
 async def main():
-    bot = Bot(token=config.BOT_TOKEN, parse_mode="HTML")
-    dp = Dispatcher(storage=MemoryStorage())
+    try:
+        bot = Bot(token=config.BOT_TOKEN, parse_mode="HTML")
+        logger.info("Bot yaratildi")
 
-    dp.message.middleware(rate_limiter_middleware)
-    dp.include_router(router)
+        dp = Dispatcher(storage=MemoryStorage())
+        dp.message.middleware(rate_limiter_middleware)
+        dp.include_router(router)
+        logger.info("Dispatcher tayyor")
 
-    app = web.Application()
+        app = web.Application()
+        webhook_handler = SimpleRequestHandler(
+            dispatcher=dp,
+            bot=bot,
+            secret_token=WEBHOOK_SECRET,
+        )
+        webhook_handler.register(app, path=WEBHOOK_PATH)
+        setup_application(app, dp, bot=bot)
+        logger.info("Aiohttp app tayyor")
 
-    webhook_handler = SimpleRequestHandler(
-        dispatcher=dp,
-        bot=bot,
-        secret_token=WEBHOOK_SECRET,
-    )
+        app.on_startup.append(lambda _: asyncio.create_task(on_startup(bot)))
+        app.on_shutdown.append(lambda _: asyncio.create_task(on_shutdown(bot)))
 
-    webhook_handler.register(app, path=WEBHOOK_PATH)
-    setup_application(app, dp, bot=bot)
+        runner = web.AppRunner(app)
+        await runner.setup()
+        logger.info("Runner setup bo'ldi")
 
-    app.on_startup.append(lambda _: asyncio.create_task(on_startup(bot)))
-    app.on_shutdown.append(lambda _: asyncio.create_task(on_shutdown(bot)))
+        port = int(os.getenv("PORT", 10000))
+        site = web.TCPSite(runner, host="0.0.0.0", port=port)
+        await site.start()
+        logger.info(f"Server ochildi: 0.0.0.0:{port}{WEBHOOK_PATH}")
 
-    runner = web.AppRunner(app)
-    await runner.setup()
+        await asyncio.Event().wait()
 
-    port = int(os.getenv("PORT", 10000))
-
-    site = web.TCPSite(runner, host="0.0.0.0", port=port)
-    await site.start()
-
-    logger.info(f"Webhook server ishga tushdi → http://0.0.0.0:{port}{WEBHOOK_PATH}")
-    logger.info(f"Render PORT env var qiymati: {port}")
+    except Exception as e:
+        logger.error("Main funksiyada katta xato", exc_info=True)
+        raise
     
-    await asyncio.Event().wait()
-
 if __name__ == "__main__":
     try:
         asyncio.run(main())
