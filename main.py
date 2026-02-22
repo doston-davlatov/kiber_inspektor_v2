@@ -1,79 +1,92 @@
 import asyncio
 import logging
-import os  # 1. os moduli qo'shildi (makedirs uchun)
-import nltk
+
+from aiohttp import web
 from aiogram import Bot, Dispatcher
-from aiogram.enums.parse_mode import ParseMode
+from aiogram.webhook.aiohttp_server import SimpleRequestHandler, setup_application
 from aiogram.fsm.storage.memory import MemoryStorage
-from aiogram.client.default import DefaultBotProperties  # 2. Yangi versiya uchun kerak
 
 from config import config
-from db import db 
-from middlewares.rate_limiter import RateLimiter 
-from handlers.user_handlers import router as user_router 
-from handlers.admin_handlers import router as admin_router 
-from handlers.support_handlers import router as support_router 
-from handlers.group_handlers import router as group_router 
+from db import init_db, close_db, create_tables
+import nltk
 
-# Logging sozlamalari
+from handlers import router
+from middlewares import rate_limiter_middleware
+from analyzers import text_analyzer, url_scanner, file_scanner
+
 logging.basicConfig(
-    level=getattr(logging, config.LOG_LEVEL), 
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+    level=logging.INFO,
+    format="%(asctime)s - %(levelname)s - %(name)s - %(message)s",
 )
 logger = logging.getLogger(__name__)
 
-async def on_startup(bot: Bot):  # Aiogram 3 da bot ob'ekti argument sifatida kelishi mumkin
-    """Bot ishga tushganda ishlaydi."""
-    await db.initialize()
-    os.makedirs(config.TEMP_DIR, exist_ok=True)  # Temp papka yaratish
-    logger.info("✅ Bot ishga tushdi va DB ulandi")
+WEBHOOK_PATH = "/webhook/"
+WEBHOOK_URL = f"{config.WEBHOOK_URL.rstrip('/')}{WEBHOOK_PATH}"
+WEBHOOK_SECRET = config.WEBHOOK_SECRET or "kiber-inspektor-secret-2025-random-xyz"
 
-async def on_shutdown(bot: Bot):
-    """Bot to'xtatilganda ishlaydi."""
-    await db.close()
-    logger.info("✅ Bot to'xtadi va DB yopildi")
-
-async def error_handler(event, exception):
-    """Global xato handler."""
-    logger.exception(f"Xato yuz berdi: {exception}")
-
-async def main():
-    # 3. Botni yangi DefaultBotProperties bilan yaratish
-    bot = Bot(
-        token=config.BOT_TOKEN, 
-        default=DefaultBotProperties(parse_mode=ParseMode.HTML)
-    )
-    
-    storage = MemoryStorage()
-    dp = Dispatcher(storage=storage)
-    
-    # Middleware qo'shish
-    dp.message.middleware(RateLimiter())
-    
-    # Routerlarni include qilish
-    dp.include_routers(user_router, admin_router, support_router, group_router)
-    
-    # Startup va shutdown register
-    dp.startup.register(on_startup)
-    dp.shutdown.register(on_shutdown)
-    dp.errors.register(error_handler)
+async def on_startup(bot: Bot):
+    await create_tables()
+    await init_db()
     
     try:
-        if config.WEBHOOK_URL:
-            # Webhook mode
-            await bot.set_webhook(config.WEBHOOK_URL)
-            logger.info(f"Webhook o'rnatildi: {config.WEBHOOK_URL}")
-            # Webhook serverni bu yerda ishga tushirish (masalan, aiohttp)
-        else:
-            # Polling mode
-            logger.info("Bot polling rejimida ishga tushmoqda...")
-            await bot.delete_webhook(drop_pending_updates=True)
-            await dp.start_polling(bot)
-    finally:
-        await bot.session.close()
+        nltk.download('punkt', quiet=True)
+        nltk.download('stopwords', quiet=True)
+    except Exception as e:
+        logger.warning(f"NLTK download xatosi: {e}")
+
+    await bot.set_webhook(
+        url=WEBHOOK_URL,
+        secret_token=WEBHOOK_SECRET,
+        drop_pending_updates=True,
+        allowed_updates=["message", "callback_query", "my_chat_member"]
+    )
+    logger.info(f"Webhook o'rnatildi: {WEBHOOK_URL}")
+
+
+async def on_shutdown(bot: Bot):
+    await bot.delete_webhook(drop_pending_updates=True)
+    await close_db()
+    logger.info("Webhook o'chirildi va bot to'xtadi")
+
+
+async def main():
+    bot = Bot(token=config.BOT_TOKEN, parse_mode="HTML")
+    dp = Dispatcher(storage=MemoryStorage())
+
+    dp.message.middleware(rate_limiter_middleware)
+    dp.include_router(router)
+
+    app = web.Application()
+
+    webhook_handler = SimpleRequestHandler(
+        dispatcher=dp,
+        bot=bot,
+        secret_token=WEBHOOK_SECRET,
+    )
+
+    webhook_handler.register(app, path=WEBHOOK_PATH)
+    setup_application(app, dp, bot=bot)
+
+    app.on_startup.append(lambda _: asyncio.create_task(on_startup(bot)))
+    app.on_shutdown.append(lambda _: asyncio.create_task(on_shutdown(bot)))
+
+    runner = web.AppRunner(app)
+    await runner.setup()
+
+    port = int(config.WEBHOOK_PORT or 8080)
+
+    site = web.TCPSite(runner, host="0.0.0.0", port=port)
+    await site.start()
+
+    logger.info(f"Server ishga tushdi → http://0.0.0.0:{port}{WEBHOOK_PATH}")
+
+    await asyncio.Event().wait()
+
 
 if __name__ == "__main__":
     try:
         asyncio.run(main())
     except (KeyboardInterrupt, SystemExit):
-        logger.info("Bot qo'lda to'xtatildi")
+        logger.info("Bot to'xtatildi")
+    except Exception as e:
+        logger.error(f"Kutilmagan xato: {e}", exc_info=True)
