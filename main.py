@@ -74,26 +74,26 @@ async def on_shutdown(bot: Bot):
 
 async def main():
     try:
+        logger.info("main() boshlandi")
+        
         bot = Bot(
             token=config.BOT_TOKEN,
             default=DefaultBotProperties(parse_mode="HTML")
         )
-        logger.info("Bot obyekti yaratildi")
+        logger.info("Bot yaratildi")
 
         dp = Dispatcher(storage=MemoryStorage())
         logger.info("Dispatcher yaratildi")
 
-        # Middleware'larni ulash
-        # Agar logging_middleware mavjud bo'lsa:
-        # dp.message.middleware(logging_middleware)
-        
         dp.message.middleware(rate_limiter_middleware)
-        logger.info("Middleware'lar ulandi")
+        logger.info("Rate limiter ulandi")
 
         dp.include_router(router)
-        logger.info("Router qo'shildi")
+        logger.info("Router ulandi")
 
         app = web.Application()
+        logger.info("Aiohttp app yaratildi")
+
         webhook_handler = SimpleRequestHandler(
             dispatcher=dp,
             bot=bot,
@@ -101,29 +101,28 @@ async def main():
         )
         webhook_handler.register(app, path=WEBHOOK_PATH)
         setup_application(app, dp, bot=bot)
-        logger.info("Aiohttp application tayyorlandi")
+        logger.info("Webhook handler ro'yxatdan o'tkazildi")
 
         app.on_startup.append(lambda _: asyncio.create_task(on_startup(bot)))
         app.on_shutdown.append(lambda _: asyncio.create_task(on_shutdown(bot)))
+        logger.info("Startup/shutdown handlerlar qo'shildi")
 
         runner = web.AppRunner(app)
         await runner.setup()
         logger.info("Runner setup bo'ldi")
 
         port = int(os.getenv("PORT", 10000))
-        host = "0.0.0.0"
+        logger.info(f"PORT qiymati: {port}")
 
-        site = web.TCPSite(runner, host=host, port=port)
+        site = web.TCPSite(runner, host="0.0.0.0", port=port)
         await site.start()
-        logger.info(f"Server ishga tushdi → {host}:{port}{WEBHOOK_PATH}")
-        logger.info(f"Render PORT qiymati: {os.getenv('PORT', 'topilmadi')}")
+        logger.info(f"Server ochildi: 0.0.0.0:{port}{WEBHOOK_PATH}")
 
         await asyncio.Event().wait()
 
     except Exception as e:
-        logger.error("main() funksiyasida xato", exc_info=True)
+        logger.error("main() ichida CRITICAL xato", exc_info=True)
         raise
-
 
 if __name__ == "__main__":
     try:
