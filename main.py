@@ -69,13 +69,14 @@ async def main():
     runner = web.AppRunner(app)
     await runner.setup()
 
-    port = int(config.WEBHOOK_PORT or os.getenv("PORT", 8080))
+    port = int(os.getenv("PORT", 10000))
 
     site = web.TCPSite(runner, host="0.0.0.0", port=port)
     await site.start()
 
-    logger.info(f"Server ishga tushdi → http://0.0.0.0:{port}{WEBHOOK_PATH}")
-
+    logger.info(f"Webhook server ishga tushdi → http://0.0.0.0:{port}{WEBHOOK_PATH}")
+    logger.info(f"Render PORT env var qiymati: {port}")
+    
     await asyncio.Event().wait()
 
 if __name__ == "__main__":
