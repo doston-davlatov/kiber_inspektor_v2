@@ -18,10 +18,18 @@ class Database:
         """DB ni initialize qilish va jadvallarni yaratish."""
         if self._initialized:
             return
+        
         try:
+            # Aiven Cloud va boshqa masofaviy MySQL serverlar uchun SSL sozlamasi
+            import ssl
+            ctx = ssl.create_default_context()
+            ctx.check_hostname = False
+            ctx.verify_mode = ssl.CERT_NONE  # O'z-o'zidan imzolangan sertifikatlar uchun
+
             self.pool = await aiomysql.create_pool(
                 host=config.MYSQL_HOST,
-                port=config.MYSQL_PORT,
+                # Port .env faylidan string bo'lib kelsa, uni int ga o'tkazish shart
+                port=int(config.MYSQL_PORT), 
                 user=config.MYSQL_USER,
                 password=config.MYSQL_PASSWORD,
                 db=config.MYSQL_DB,
@@ -29,15 +37,21 @@ class Database:
                 autocommit=True,
                 minsize=1,
                 maxsize=10,
-                cursorclass=aiomysql.DictCursor  # Natijalar dict bo'lib qaytadi
+                ssl=ctx,  # SSL ulanishni majburiy ko'rsatamiz
+                cursorclass=aiomysql.DictCursor
             )
+            
+            # Jadvallarni yaratish metodini chaqiramiz
             await self._create_tables()
+            
             self._initialized = True
-            logger.info("✅ MySQL ulandi va jadvallar tayyor")
+            logger.info(f"✅ MySQL muvaffaqiyatli ulandi: {config.MYSQL_HOST}:{config.MYSQL_PORT}")
+            
         except Exception as e:
             logger.error(f"❌ MySQL ulanish xatosi: {e}")
+            # Xato chiqsa dasturni to'xtatish yoki loglash uchun raise qilamiz
             raise
-
+        
     async def _create_tables(self) -> None:
         """Jadvallarni yaratish (bot_ prefiksi bilan)."""
         async with self.pool.acquire() as conn:

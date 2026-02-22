@@ -41,7 +41,7 @@ class Config:
     
     def __init__(self):
         # Validation: Muhim qiymatlar borligini tekshirish
-        required = ["BOT_TOKEN", "MYSQL_USER", "MYSQL_PASSWORD", "MYSQL_DB", "VIRUSTOTAL_API_KEY"]
+        required = ["BOT_TOKEN", "MYSQL_USER", "MYSQL_DB", "VIRUSTOTAL_API_KEY"]
         for key in required:
             if not getattr(self, key, None):
                 raise ValueError(f"{key} .env da topilmadi!")
