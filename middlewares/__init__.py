@@ -1,9 +1,25 @@
 # middlewares/__init__.py
 """
-Middlewares moduli: botga global qo'shimcha logika qo'shish.
-Hozircha faqat rate limiter mavjud, kelajakda validation, logging middleware qo'shilishi mumkin.
+Middlewares moduli: botga global qo'shimcha logika qo'shish uchun middleware'lar.
+Hozircha faqat rate limiter mavjud, kelajakda quyidagilar qo'shilishi mumkin:
+- LoggingMiddleware (har bir xabarni loglash)
+- ValidationMiddleware (xabar tarkibini tekshirish)
+- AuthMiddleware (admin/foydalanuvchi ruxsatlarini tekshirish)
+- AntiFloodMiddleware (vaqtinchalik cheklovlar)
 """
-from .rate_limiter import RateLimiter
+
+# Asosiy eksport qilinadigan ob'ektlar
+from .rate_limiter import rate_limiter_middleware
+
+# Kelajakda qo'shilishi mumkin bo'lgan middleware'larni shu yerga import qilish mumkin
+# from .logging import logging_middleware
+# from .validation import validation_middleware
+# from .auth import admin_only_middleware
+
+# Eksport qilinadigan nomlar (main.py da ishlatish uchun qulay)
 __all__ = [
-    "RateLimiter",
+    "rate_limiter_middleware",          # asosiy rate limiter instance
+    "logging_middleware",             # kelajakda
+    # "validation_middleware",
+    # "admin_only_middleware",
 ]

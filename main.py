@@ -51,6 +51,7 @@ async def main():
         logger.info("Bot yaratildi")
 
         dp = Dispatcher(storage=MemoryStorage())
+        dp.message.middleware(logging_middleware)
         dp.message.middleware(rate_limiter_middleware)
         dp.include_router(router)
         logger.info("Dispatcher tayyor")
