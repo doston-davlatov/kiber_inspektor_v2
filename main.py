@@ -15,10 +15,6 @@ import nltk
 from handlers import router
 from middlewares import rate_limiter_middleware
 
-# Agar logging_middleware mavjud bo'lsa import qiling
-# from middlewares.logging import logging_middleware
-# Agar yo'q bo'lsa quyidagi qatorni komment qiling yoki o'chirib tashlang
-
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s - %(levelname)s - %(name)s - %(message)s",
@@ -92,9 +88,23 @@ async def main():
         dp.include_router(router)
         logger.info("Router ulandi")
 
+        # Aiohttp app yaratish
         app = web.Application()
         logger.info("Aiohttp app yaratildi")
+        app.router.add_static('/static/', path='static', name='static')
+        
+        # Root yo'lida index.html ni qaytarish
+        async def serve_index(request):
+            index_path = os.path.join('static', 'index.html')
+            if os.path.exists(index_path):
+                return web.FileResponse(index_path)
+            else:
+                return web.Response(text="Index sahifasi topilmadi (static/index.html yo'q)", status=404)
 
+        app.router.add_get('/', serve_index)
+        logger.info("Statik fayllar va index.html yo'li qo'shildi")
+
+        # Webhook handler
         webhook_handler = SimpleRequestHandler(
             dispatcher=dp,
             bot=bot,
@@ -124,6 +134,7 @@ async def main():
     except Exception as e:
         logger.error("main() ichida CRITICAL xato", exc_info=True)
         raise
+
 
 if __name__ == "__main__":
     try:
