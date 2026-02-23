@@ -41,7 +41,8 @@ async def cmd_start(message: Message):
         "Buyruqlar:\n"
         "• Matnni tekshirish: /check [matn]\n"
         "• Havolani skanerlash: /scanurl [url]\n"
-        "• Fayl yuboring – avto-skan\n\n"
+        "• Fayl yuboring – avto-skan\n"
+        "⚠️ Bot guruhlarda ishlaydi! Guruhga qo‘shing, avtomatik tekshiruv yoqiladi.\n\n"
         "Xavfsiz bo'ling! 🔒"
     )
     keyboard = get_main_keyboard(is_admin=user.id in config.ADMIN_IDS)
