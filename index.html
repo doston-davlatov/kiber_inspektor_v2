@@ -1,0 +1,322 @@
+<!DOCTYPE html>
+<html lang="uz">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Kiber-Inspektor • Xavfsizlik Bot</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@500;700&family=Roboto+Mono:wght@300;400;500&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg: #0a0015;
+      --primary: #00f0ff;
+      --primary-dark: #00b8cc;
+      --accent: #ff00aa;
+      --text: #e0f7ff;
+      --text-muted: #a0d8ef;
+      --card-bg: rgba(10, 20, 40, 0.65);
+      --glow: 0 0 25px rgba(0, 240, 255, 0.45);
+    }
+
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      min-height: 100vh;
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'Roboto Mono', monospace;
+      overflow-x: hidden;
+      background-image: 
+        radial-gradient(circle at 15% 50%, rgba(0,240,255,0.07) 0%, transparent 25%),
+        radial-gradient(circle at 85% 30%, rgba(255,0,170,0.06) 0%, transparent 30%);
+    }
+
+    .stars {
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+      background: transparent;
+      z-index: -2;
+    }
+
+    .stars::before,
+    .stars::after {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background: radial-gradient(circle, white 1px, transparent 1px);
+      background-size: 50px 50px;
+      opacity: 0.07;
+      animation: drift 120s linear infinite;
+    }
+
+    .stars::after {
+      background-size: 70px 70px;
+      opacity: 0.04;
+      animation-duration: 180s;
+      animation-direction: reverse;
+    }
+
+    @keyframes drift {
+      from { transform: translate(0,0); }
+      to   { transform: translate(-50px, -50px); }
+    }
+
+    header {
+      position: relative;
+      padding: 8vh 5vw 12vh;
+      text-align: center;
+      overflow: hidden;
+    }
+
+    .logo{
+        border-radius: 50%;
+    }
+
+    .logo-container {
+      position: relative;
+      width: 180px;
+      height: 180px;
+      margin: 0 auto 2.5rem;
+    }
+
+    .logo-glow {
+      position: absolute;
+      inset: 0;
+      border-radius: 50%;
+      background: radial-gradient(circle at 30% 30%, var(--primary) 0%, transparent 70%);
+      filter: blur(40px);
+      opacity: 0.6;
+      animation: pulse-glow 6s ease-in-out infinite;
+    }
+
+    @keyframes pulse-glow {
+      0%,100% { opacity: 0.5; transform: scale(1); }
+      50%     { opacity: 0.85; transform: scale(1.15); }
+    }
+
+    .logo {
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+      filter: drop-shadow(0 0 30px var(--primary));
+      animation: float 7s ease-in-out infinite;
+    }
+
+    @keyframes float {
+      0%,100% { transform: translateY(0); }
+      50%     { transform: translateY(-20px); }
+    }
+
+    h1 {
+      font-family: 'Orbitron', sans-serif;
+      font-size: clamp(2.8rem, 8vw, 6.5rem);
+      letter-spacing: 0.15em;
+      background: linear-gradient(90deg, var(--primary), #ffffff, var(--accent), var(--primary));
+      background-size: 300% 300%;
+      -webkit-background-clip: text;
+      background-clip: text;
+      -webkit-text-fill-color: transparent;
+      text-shadow: 0 0 40px rgba(0,240,255,0.5);
+      animation: titleGradient 12s ease infinite;
+    }
+
+    @keyframes titleGradient {
+      0%   { background-position: 0% 50%; }
+      50%  { background-position: 100% 50%; }
+      100% { background-position: 0% 50%; }
+    }
+
+    .tagline {
+      margin: 1.5rem 0 3rem;
+      font-size: clamp(1.1rem, 3vw, 1.6rem);
+      color: var(--text-muted);
+      max-width: 700px;
+      margin-left: auto;
+      margin-right: auto;
+      text-shadow: 0 2px 10px rgba(0,0,0,0.6);
+    }
+
+    .btn-telegram {
+      display: inline-flex;
+      align-items: center;
+      gap: 12px;
+      padding: 16px 36px;
+      font-size: 1.3rem;
+      font-weight: 500;
+      color: white;
+      background: linear-gradient(135deg, #0088cc, #00aaff);
+      border: none;
+      border-radius: 50px;
+      text-decoration: none;
+      box-shadow: 0 8px 30px rgba(0, 136, 204, 0.4);
+      transition: all 0.35s ease;
+      margin: 1.5rem 0;
+    }
+
+    .btn-telegram:hover {
+      transform: translateY(-6px) scale(1.06);
+      box-shadow: 0 16px 40px rgba(0, 136, 204, 0.6);
+      background: linear-gradient(135deg, #00aaff, #0088cc);
+    }
+
+    .btn-telegram svg {
+      width: 32px;
+      height: 32px;
+      fill: currentColor;
+    }
+
+    main {
+      max-width: 1280px;
+      margin: 0 auto;
+      padding: 0 5vw 8vh;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
+      gap: 2.5rem;
+      margin: 6vh 0;
+    }
+
+    .card {
+      position: relative;
+      background: var(--card-bg);
+      backdrop-filter: blur(12px);
+      border: 1px solid rgba(0, 240, 255, 0.12);
+      border-radius: 16px;
+      padding: 2.2rem;
+      transition: all 0.4s ease;
+      overflow: hidden;
+    }
+
+    .card:hover {
+      transform: translateY(-12px);
+      border-color: var(--primary);
+      box-shadow: var(--glow);
+    }
+
+    .card::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background: linear-gradient(135deg, transparent, rgba(0,240,255,0.08), transparent);
+      opacity: 0;
+      transition: opacity 0.5s;
+      pointer-events: none;
+    }
+
+    .card:hover::before {
+      opacity: 1;
+    }
+
+    .card-icon {
+      font-size: 3.2rem;
+      margin-bottom: 1.2rem;
+      color: var(--primary);
+      filter: drop-shadow(0 0 15px rgba(0,240,255,0.5));
+    }
+
+    .card h3 {
+      font-family: 'Orbitron', sans-serif;
+      font-size: 1.6rem;
+      margin-bottom: 1rem;
+      color: var(--primary);
+    }
+
+    .card p {
+      color: var(--text-muted);
+      font-size: 1.05rem;
+    }
+
+    footer {
+      text-align: center;
+      padding: 4rem 1rem 2rem;
+      color: var(--text-muted);
+      font-size: 0.95rem;
+      border-top: 1px solid rgba(0,240,255,0.1);
+    }
+
+    @media (max-width: 640px) {
+      header {
+        padding: 6vh 5vw 10vh;
+      }
+      h1 {
+        font-size: clamp(2.4rem, 10vw, 4.8rem);
+      }
+      .logo-container {
+        width: 140px;
+        height: 140px;
+      }
+    }
+  </style>
+</head>
+<body>
+
+<div class="stars"></div>
+
+<header>
+  <div class="logo-container">
+    <div class="logo-glow"></div>
+    <img src="https://files.catbox.moe/0xas6o.jpg" alt="Kiber-Inspektor Logo" class="logo">
+  </div>
+  <h1>KIBER-INSPEKTOR</h1>
+  <p class="tagline">Kiberxavfsizlikning yangi avlod yordamchisi • Telegram bot</p>
+
+  <a href="https://t.me/kiber_inspektorBot" target="_blank" class="btn-telegram">
+    <svg viewBox="0 0 24 24"><path d="M12 0C5.373 0 0 5.373 0 12s5.373 12 12 12 12-5.373 12-12S18.627 0 12 0zm5.896 16.312c-.164.468-.508.84-.972 1.016-.618.236-1.446.18-2.282-.158l-3.48-1.436-1.684 2.058c-.35.428-.916.68-1.492.68h-.002c-.312 0-.624-.082-.9-.24-.636-.364-1.046-1.056-1.046-1.82V9.932c0-.764.41-1.456 1.046-1.82.636-.364 1.42-.418 2.1-.146l10.068 4.368c.74.32 1.21 1.056 1.21 1.846 0 .79-.47 1.526-1.21 1.846l-.138.066z"/></svg>
+    Botni ochish
+  </a>
+</header>
+
+<main>
+  <div class="grid">
+    <div class="card">
+      <div class="card-icon">🛡️</div>
+      <h3>Phishing & Scam Aniqlash</h3>
+      <p>Shubhali havolalar, soxta xabarlar va firibgarlik usullarini real vaqtda aniqlaydi.</p>
+    </div>
+
+    <div class="card">
+      <div class="card-icon">📄</div>
+      <h3>Fayllarni Avto-Skan</h3>
+      <p>VirusTotal integratsiyasi bilan har qanday yuborilgan faylni avtomatik tekshiradi (50 MB gacha).</p>
+    </div>
+
+    <div class="card">
+      <div class="card-icon">🌐</div>
+      <h3>URL & Domen Tekshiruvi</h3>
+      <p>SSL sertifikat, domen yoshi, VirusTotal ballari va boshqa ko‘rsatkichlar bo‘yicha chuqur tahlil.</p>
+    </div>
+
+    <div class="card">
+      <div class="card-icon">🗣️</div>
+      <h3>Guruh Himoyasi</h3>
+      <p>Guruh chatlarda avtomatik monitoring, xavfli xabarni o‘chirish va ogohlantirish.</p>
+    </div>
+
+    <div class="card">
+      <div class="card-icon">📊</div>
+      <h3>Admin Paneli</h3>
+      <p>Statistika, ban/unban, loglar va sozlamalarni boshqarish uchun maxsus interfeys.</p>
+    </div>
+
+    <div class="card">
+      <div class="card-icon">🛠️</div>
+      <h3>Machine Learning</h3>
+      <p>Matn va xatti-harakatlar tahlili uchun o‘qitilgan model (scam ehtimolini foizda hisoblaydi).</p>
+    </div>
+  </div>
+</main>
+
+<footer>
+  <p>© 2026 Kiber-Inspektor • Xavfsiz internet uchun • @doston_davlatov</p>
+</footer>
+
+</body>
+</html>
