@@ -35,7 +35,7 @@ class Database:
                 autocommit=True,
                 minsize=1,
                 maxsize=10,
-                ssl=ctx,
+                ssl=ctx if 'aivencloud.com' in config.MYSQL_HOST else None,
                 cursorclass=aiomysql.DictCursor
             )
             
