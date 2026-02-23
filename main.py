@@ -39,6 +39,7 @@ async def on_startup(bot: Bot):
     
     try:
         nltk.download('punkt', quiet=True)
+        nltk.download('punkt_tab', quiet=True)
         nltk.download('stopwords', quiet=True)
         logger.info("NLTK ma'lumotlari yuklandi")
     except Exception as e:
