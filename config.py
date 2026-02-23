@@ -38,8 +38,8 @@ class Config:
     def __init__(self):
         self.BOT_TOKEN = self._get_required("BOT_TOKEN")
 
-        self.MYSQL_HOST     = os.getenv("MYSQL_HOST",     "127.0.0.1")
-        self.MYSQL_PORT     = self._get_int("MYSQL_PORT",     3306)
+        self.MYSQL_HOST     = os.getenv("MYSQL_HOST")
+        self.MYSQL_PORT     = self._get_int("MYSQL_PORT")
         self.MYSQL_USER     = os.getenv("MYSQL_USER")           # ixtiyoriy, None bo'lishi mumkin
         self.MYSQL_PASSWORD = os.getenv("MYSQL_PASSWORD")       # ← endi majburiy emas, None bo'lishi mumkin
         self.MYSQL_DB       = self._get_required("MYSQL_DB")
