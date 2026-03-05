@@ -21,7 +21,7 @@ class Config:
     MYSQL_PASSWORD: Optional[str] = None
     MYSQL_DB: str
     VIRUSTOTAL_API_KEY: str
-
+    
     ADMIN_IDS: List[int] = []
     WEBHOOK_URL: Optional[str] = None
     WEBHOOK_SECRET: Optional[str] = None
@@ -44,7 +44,12 @@ class Config:
         self.MYSQL_DB = self._get_required("MYSQL_DB")
 
         self.VIRUSTOTAL_API_KEY = self._get_required("VIRUSTOTAL_API_KEY")
-
+        self.GROQ_API_KEY = self._get_required("GROQ_API_KEY")
+        self.LLM_MODEL = os.getenv("LLM_MODEL", "llama-3.3-70b-versatile")
+        self.LLM_THRESHOLD = self._get_float("LLM_THRESHOLD", 0.72)
+        self.USE_HYBRID = os.getenv("USE_HYBRID", "true").lower() == "true"
+        self.OCR_ENABLED = os.getenv("OCR_ENABLED", "true").lower() == "true"
+        
         admin_str = os.getenv("ADMIN_IDS", "").strip()
         if admin_str:
             try:

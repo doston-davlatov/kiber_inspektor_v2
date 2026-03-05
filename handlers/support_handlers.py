@@ -15,18 +15,16 @@ from aiogram.exceptions import TelegramBadRequest
 
 from db import db
 from config import config
-from keyboards.main_keyboard import get_support_keyboard  # keyingi qadamda yoziladi
+from keyboards.main_keyboard import get_support_inline_keyboard
 from utils.helpers import is_admin
 
 logger = logging.getLogger(__name__)
 
 router = Router(name="support_handlers")
-
-# FSM states support uchun
 class SupportForm(StatesGroup):
     subject = State()
     message = State()
-    request_id = State()  # Admin javob berish uchun
+    request_id = State() 
 
 @router.message(Command("support"))
 async def cmd_support(message: Message, state: FSMContext):
@@ -127,7 +125,7 @@ async def cmd_requests(message: Message):
             f"   Vaqt: {req['created_at']}\n\n"
         )
 
-    keyboard = get_support_keyboard(requests)  # Inline tugmalar requestlarga
+    keyboard = get_support_inline_keyboard(requests)  # Inline tugmalar requestlarga
 
     await message.reply(text, reply_markup=keyboard)
 

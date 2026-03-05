@@ -9,3 +9,6 @@ nltk
 python-dotenv
 aiohttp
 transformers
+groq>=0.11.0
+easyocr>=1.7.0
+pillow>=10.0.0

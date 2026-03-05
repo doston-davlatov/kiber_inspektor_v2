@@ -1,6 +1,7 @@
 import logging
 from aiogram import Router, F
 from aiogram.types import Message
+from analyzers.image_analyzer import analyze_image
 from db import db
 from analyzers import analyze_text, scan_url, scan_file
 from handlers.group_handlers import scan_message
@@ -26,9 +27,24 @@ async def smart_scan_handler(message: Message):
             reply_markup=get_main_keyboard()
         )
         return
-
     should_scan = False
 
+
+    if message.photo:
+        photo = message.photo[-1]
+        file_info = await message.bot.get_file(photo.file_id)
+        temp_path = config.TEMP_DIR / f"photo_{photo.file_id}.jpg"
+        
+        await message.bot.download_file(file_info.file_path, temp_path)
+        
+        image_result = await analyze_image(temp_path)
+        
+        if image_result["threat"] != "Safe":
+            threat_level = max(threat_level, image_result["threat"], key=lambda x: {"Safe":0, "Low":1, "High":2}[x])
+            reason_parts.append(f"Rasm tahlili: {image_result['reason']}")
+        
+        cleanup_temp_file(str(temp_path))
+            
     if mode == "full_check":
         should_scan = True
     elif mode == "url_only":

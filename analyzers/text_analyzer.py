@@ -1,192 +1,163 @@
-# analyzers/text_analyzer.py
-"""
-Matn tahlili: scam/phishing aniqlash uchun ML va qoida asosidagi tizim.
-"""
-
-import re
 import logging
-import os
-from typing import Dict, Any
+import re
 import joblib
 import nltk
 from nltk.corpus import stopwords
-from nltk.tokenize import word_tokenize
 from sklearn.feature_extraction.text import TfidfVectorizer
-from sklearn.linear_model import LogisticRegression
-from sklearn.pipeline import Pipeline
+from pathlib import Path
+from groq import Groq, GroqError
 from config import config
-
-# NLTK ma'lumotlarini yuklash (bir marta)
-try:
-    nltk.data.find('tokenizers/punkt')
-    nltk.data.find('corpora/stopwords')
-except LookupError:
-    nltk.download('punkt', quiet=True)
-    nltk.download('stopwords', quiet=True)
+from typing import Dict, Optional
 
 logger = logging.getLogger(__name__)
 
-# Uzbek + English + Russian stop words (ko'proq tilli qilish uchun)
-STOP_WORDS = set(stopwords.words('english') + stopwords.words('russian'))
-# Uzbek stop words qo'lda qo'shilgan (chunki NLTK da to'liq emas)
-UZBEK_STOP = {
-    'va', 'bilan', 'da', 'dan', 'ga', 'ni', 'ning', 'lar', 'da', 'de', 'bu', 'shu',
-    'u', 'o', 'men', 'sen', 'biz', 'siz', 'ular', 'bu', 'shu', 'o', 'qilmoq', 'bo\'lmoq'
-}
-STOP_WORDS.update(UZBEK_STOP)
+nltk_ready = False
+try:
+    nltk.data.find('tokenizers/punkt')
+    nltk.data.find('corpora/stopwords')
+    nltk_ready = True
+except LookupError:
+    pass
 
-# Model va vectorizer yo'llari
+STOP_WORDS = set()
+if nltk_ready:
+    try:
+        STOP_WORDS = set(stopwords.words('english')) | set(stopwords.words('russian')) | \
+                     {'pul', 'so‘m', 'kartangiz', 'bloklandi', 'yutuq', 'tezkor', 'xavfsiz', 'ishonchli'}
+    except:
+        pass
+
 MODEL_PATH = config.MODEL_PATH
-VECTORIZER_PATH = os.path.join(os.path.dirname(MODEL_PATH), "vectorizer.pkl")
+VECTORIZER_PATH = MODEL_PATH.parent / "vectorizer.pkl"
 
-# Global o'zgaruvchilar (lazy loading)
-_model = None
-_vectorizer = None
-_pipeline = None
+ml_model = None
+vectorizer = None
 
-def load_model():
-    """Model va vectorizerni yuklash (lazy)."""
-    global _model, _vectorizer, _pipeline
-    if _pipeline is not None:
-        return
-
+if MODEL_PATH.exists():
     try:
-        if os.path.exists(MODEL_PATH) and os.path.exists(VECTORIZER_PATH):
-            _model = joblib.load(MODEL_PATH)
-            _vectorizer = joblib.load(VECTORIZER_PATH)
-            _pipeline = Pipeline([
-                ('tfidf', _vectorizer),
-                ('clf', _model)
-            ])
-            logger.info("✅ Scam model yuklandi")
-        else:
-            logger.warning("Model fayllari topilmadi. Avval train_scam_model() chaqiring.")
+        ml_model = joblib.load(MODEL_PATH)
+        vectorizer = joblib.load(VECTORIZER_PATH)
+        logger.info("ML model yuklandi")
     except Exception as e:
-        logger.error(f"Model yuklashda xato: {e}")
-        raise
+        logger.warning(f"ML model yuklanmadi: {e}")
 
-
-def train_scam_model(save: bool = True) -> None:
-    """
-    Oddiy modelni train qilish (real loyihada kattaroq dataset bilan ishlatiladi).
-    Bu misol uchun – haqiqiy dataset (Kaggle SMS Spam yoki o'zbek scam matnlari) bilan almashtiring.
-    """
-    global _pipeline
-
-    # Misol dataset (realda 1000+ misol bo'lishi kerak)
-    texts = [
-        "Siz 10 million so'm yutdingiz! Linkni bosing: https://fake.com",
-        "Bankdan xabar: Kartangiz bloklandi, parolni yangilang!",
-        "Tez pul topish usuli – hozir bosing!",
-        "Salom do'stim, bugun nima qilyapsan?",
-        "Assalomu alaykum, yaxshimisiz?",
-        "Sizga sovg'a yubormoqchiman, raqamingizni yozing",
-        "Telegram premium bepul – faqat bugun!",
-    ]
-    labels = [1, 1, 1, 0, 0, 1, 1]  # 1 = scam, 0 = safe
-
+groq_client = None
+if config.GROQ_API_KEY:
     try:
-        vectorizer = TfidfVectorizer(
-            max_features=5000,
-            stop_words=list(STOP_WORDS),
-            ngram_range=(1, 2),
-            lowercase=True
-        )
-        clf = LogisticRegression(max_iter=1000, class_weight='balanced')
-        pipeline = Pipeline([('tfidf', vectorizer), ('clf', clf)])
-        pipeline.fit(texts, labels)
-
-        if save:
-            os.makedirs(os.path.dirname(MODEL_PATH), exist_ok=True)
-            joblib.dump(pipeline.named_steps['clf'], MODEL_PATH)
-            joblib.dump(pipeline.named_steps['tfidf'], VECTORIZER_PATH)
-            logger.info(f"✅ Model saqlandi: {MODEL_PATH}")
-
-        _pipeline = pipeline
-        logger.info("Model train qilindi va yuklandi")
+        groq_client = Groq(api_key=config.GROQ_API_KEY)
+        logger.info("Groq klient ishga tushdi")
     except Exception as e:
-        logger.error(f"Train jarayonida xato: {e}")
-        raise
+        logger.error(f"Groq ulanish xatosi: {e}")
 
-
-def preprocess_text(text: str) -> str:
-    """Matnni tozalash va tayyorlash."""
-    text = text.lower()
-    # URL larni olib tashlash
-    text = re.sub(r'https?://\S+|www\.\S+', '', text)
-    # Maxsus belgilarni tozalash
+async def preprocess_text(text: str) -> str:
+    if not text:
+        return ""
+    text = re.sub(r'http\S+|www\S+|@\S+|#[^\s]+', '', text.lower())
     text = re.sub(r'[^\w\s]', '', text)
-    # Tokenlash va stop words olib tashlash
-    tokens = word_tokenize(text)
-    tokens = [word for word in tokens if word not in STOP_WORDS and len(word) > 2]
+    tokens = nltk.word_tokenize(text) if nltk_ready else text.split()
+    tokens = [t for t in tokens if t not in STOP_WORDS and len(t) > 2]
     return ' '.join(tokens)
 
+def ml_predict(text: str) -> Dict:
+    if not ml_model or not vectorizer:
+        return {"threat": "Unknown", "score": 0.0, "reason": "ML model mavjud emas"}
 
-def analyze_text(text: str, threshold: float = None) -> Dict[str, Any]:
-    """
-    Matnni tahlil qilish va scam ehtimolini qaytarish.
-    Natija: {'threat': 'Safe'/'Low'/'High', 'score': 0.0-1.0, 'reason': '...'}
-    """
-    if not text or len(text.strip()) < 5:
-        return {"threat": "Safe", "score": 0.0, "reason": "Matn juda qisqa"}
+    cleaned = preprocess_text(text)
+    if not cleaned:
+        return {"threat": "Safe", "score": 0.0, "reason": "Matn bo'sh"}
 
-    threshold = threshold or config.AI_THRESHOLD
+    vec = vectorizer.transform([cleaned])
+    prob = ml_model.predict_proba(vec)[0]
+    score = prob[1] if len(prob) > 1 else prob[0]
+    label = "High" if score >= config.AI_THRESHOLD else "Low" if score >= 0.4 else "Safe"
+    return {"threat": label, "score": float(score), "reason": f"ML score: {score:.3f}"}
 
-    load_model()  # Modelni yuklash
+async def llm_analyze(text: str) -> Dict:
+    if not groq_client:
+        return {"threat": "Unknown", "score": 0.0, "reason": "Groq API yo'q"}
+
+    prompt = f"""Sen professional kiberjinoyat detektorisiz. Quyidagi matnni tahlil qiling:
+- Phishing, scam, moliyaviy firibgarlik, zararli havola yoki faylni aniqlang
+- O'zbek, rus, ingliz tillarida yozilgan bo'lishi mumkin
+- Javobni faqat JSON formatida qaytaring, hech qanday qo'shimcha matn yo'q:
+{{
+  "threat": "High" yoki "Low" yoki "Safe",
+  "score": 0.0 dan 1.0 gacha (ishonch darajasi),
+  "reason": "qisqa izoh (o'zbek tilida)"
+}}
+
+Matn:
+{text[:4000]}"""   # uzun matnlar uchun kesish
 
     try:
-        cleaned_text = preprocess_text(text)
-
-        if _pipeline is None:
-            # Model yo'q bo'lsa faqat qoida asosida ishlaymiz
-            logger.warning("ML model topilmadi, faqat qoida asosida ishlayapman")
-            return rule_based_analysis(text)
-
-        # ML predict
-        prob = _pipeline.predict_proba([cleaned_text])[0]
-        score = prob[1]  # scam sinfi ehtimoli
-
-        # Qo'shimcha qoida kuchaytirgich
-        scam_keywords = [
-            'yutuq', 'yutdingiz', 'pul oling', 'parol', 'kartangiz', 'bloklandi',
-            'tez pul', 'sovg‘a', 'premium bepul', 'linkni bosing', 'hisobingiz'
-        ]
-        rule_score = sum(1 for kw in scam_keywords if kw in text.lower()) / len(scam_keywords)
-        final_score = (score * 0.7) + (rule_score * 0.3)  # ML ga ko'proq vazn
-
-        if final_score > threshold:
-            threat = "High"
-        elif final_score > threshold * 0.4:
-            threat = "Low"
-        else:
-            threat = "Safe"
-
-        reason = f"ML score: {score:.3f}, Qoida score: {rule_score:.3f}"
-        return {"threat": threat, "score": final_score, "reason": reason}
-
-    except Exception as e:
-        logger.error(f"Text analyze xatosi: {e}")
+        response = groq_client.chat.completions.create(
+            model=config.LLM_MODEL,
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.1,
+            max_tokens=300,
+            top_p=0.95
+        )
+        content = response.choices[0].message.content.strip()
+        
+        import json
+        try:
+            result = json.loads(content)
+            if isinstance(result, dict) and "threat" in result:
+                return result
+        except:
+            pass
+        
+        return {"threat": "Unknown", "score": 0.0, "reason": f"LLM javobi noto'g'ri: {content[:100]}"}
+        
+    except GroqError as e:
+        logger.error(f"Groq xatosi: {e}")
         return {"threat": "Unknown", "score": 0.0, "reason": str(e)}
+    except Exception as e:
+        logger.exception("LLM tahlil xatosi")
+        return {"threat": "Unknown", "score": 0.0, "reason": "LLM ishlamadi"}
 
+def combine_results(ml: Dict, llm: Dict) -> Dict:
+    if not config.USE_HYBRID:
+        return llm if groq_client else ml
+    
+    ml_score = ml.get("score", 0.0)
+    llm_score = llm.get("score", 0.0)
+    
+    hybrid_score = (ml_score * 0.35) + (llm_score * 0.65)
+    
+    if hybrid_score >= config.LLM_THRESHOLD:
+        threat = "High"
+    elif hybrid_score >= 0.45:
+        threat = "Low"
+    else:
+        threat = "Safe"
+    
+    reasons = []
+    if ml.get("reason"): reasons.append(ml["reason"])
+    if llm.get("reason"): reasons.append(llm["reason"])
+    
+    return {
+        "threat": threat,
+        "score": round(hybrid_score, 3),
+        "reason": " | ".join(reasons) or "Hybrid tahlil",
+        "ml": ml,
+        "llm": llm
+    }
 
-def rule_based_analysis(text: str) -> Dict[str, Any]:
-    """Model bo'lmaganda ishlaydigan oddiy qoida asosidagi tahlil."""
-    scam_patterns = [
-        r'(yutuq|yutdingiz|million|so‘m|dollar) .* (oling|tez|hozir)',
-        r'(parol|kartangiz|hisob) .* (o‘zgartiring|bloklandi)',
-        r'(sovg‘a|premium|hisob) .* (bepul|hozir)',
-        r'https?://.*(claim|bonus|prize)',
-    ]
+def train_scam_model():
+    """Bu funksiya hozircha ishlatilmayapti yoki yangi dataset bilan qayta o'qitish kerak."""
+    logger.warning("train_scam_model chaqirildi, lekin hozir implementatsiya qilinmagan")
+    return {"status": "skipped", "message": "Modelni qayta o'qitish funksiyasi vaqtincha o'chirilgan"}
 
-    score = 0
-    for pattern in scam_patterns:
-        if re.search(pattern, text.lower(), re.IGNORECASE):
-            score += 0.35
+def analyze_text(text: str) -> Dict:
+    if not text:
+        return {"threat": "Safe", "score": 0.0, "reason": "Matn yo'q"}
 
-    score = min(score, 1.0)
-    threat = "High" if score > 0.7 else "Low" if score > 0.3 else "Safe"
-    return {"threat": threat, "score": score, "reason": "Qoida asosida tahlil"}
-
-
-# Bir marta train qilish uchun (faqat kerak bo'lganda chaqiriladi)
-# train_scam_model()
+    ml_result = ml_predict(text)
+    
+    if groq_client:
+        import asyncio
+        llm_result = asyncio.run(llm_analyze(text))
+        return combine_results(ml_result, llm_result)
+    
+    return ml_result
