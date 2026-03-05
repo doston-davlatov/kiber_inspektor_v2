@@ -163,6 +163,22 @@ class Database:
                 ''', (limit, offset))
                 return await cur.fetchall()
 
+    async def set_user_mode(self, user_id: int, mode: str) -> bool:
+        async with self.connection() as conn:
+            async with conn.cursor() as cur:
+                await cur.execute('''
+                    INSERT INTO bot_user_states (user_id, state)
+                    VALUES (%s, %s)
+                    ON DUPLICATE KEY UPDATE state = %s, updated_at = NOW()
+                ''', (user_id, mode, mode))
+                return True
+
+    async def get_user_mode(self, user_id: int) -> str:
+        async with self.connection() as conn:
+            async with conn.cursor() as cur:
+                await cur.execute('SELECT state FROM bot_user_states WHERE user_id = %s', (user_id,))
+                row = await cur.fetchone()
+                return row['state'] if row else "none"
     async def get_recent_threats(self, limit: int = 5) -> List[Dict]:
         return await self.get_threats(limit=limit)
 
