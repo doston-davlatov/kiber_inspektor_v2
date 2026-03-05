@@ -1,22 +1,16 @@
 # keyboards/main_keyboard.py
-"""
-Inline va ReplyKeyboardMarkup tugmalari yaratish funksiyalari.
-"""
 
 from aiogram.types import (
     InlineKeyboardMarkup,
     InlineKeyboardButton,
     ReplyKeyboardMarkup,
     KeyboardButton,
-    KeyboardButtonRequestUsers,
 )
 from aiogram.utils.keyboard import InlineKeyboardBuilder, ReplyKeyboardBuilder
 from config import config
 
+
 def get_main_keyboard(is_admin: bool = False) -> ReplyKeyboardMarkup:
-    """
-    Oddiy foydalanuvchilar uchun asosiy Reply keyboard.
-    """
     builder = ReplyKeyboardBuilder()
 
     builder.row(
@@ -31,7 +25,7 @@ def get_main_keyboard(is_admin: bool = False) -> ReplyKeyboardMarkup:
     if is_admin:
         builder.row(
             KeyboardButton(text="/stats"),
-            KeyboardButton(text="/requests"),
+            KeyboardButton(text="/threats"),
         )
 
     builder.adjust(2)
@@ -43,18 +37,18 @@ def get_main_keyboard(is_admin: bool = False) -> ReplyKeyboardMarkup:
     )
 
 
-def get_admin_keyboard() -> InlineKeyboardMarkup:
-    """
-    Admin uchun inline tugmalar (statistika, ban va boshqalar).
-    """
+def get_admin_inline_keyboard() -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
 
     builder.row(
-        InlineKeyboardButton(text="📊 Yangi statistika", callback_data="admin_stats"),
-        InlineKeyboardButton(text="⚠️ Oxirgi xavflar", callback_data="admin_recent_threats"),
+        InlineKeyboardButton(text="📊 Statistika", callback_data="admin_stats"),
+        InlineKeyboardButton(text="⚠️ Oxirgi xavflar", callback_data="admin_threats"),
     )
     builder.row(
         InlineKeyboardButton(text="🔍 Foydalanuvchi qidirish", callback_data="admin_search_user"),
+    )
+    builder.row(
+        InlineKeyboardButton(text="🛠 Admin panel", callback_data="admin_panel"),
     )
 
     builder.adjust(2)
@@ -62,14 +56,10 @@ def get_admin_keyboard() -> InlineKeyboardMarkup:
     return builder.as_markup()
 
 
-def get_support_keyboard(requests: list) -> InlineKeyboardMarkup:
-    """
-    Admin uchun support so'rovlariga inline tugmalar.
-    Har bir so'rov uchun "Ko'rish" va "Yopish" tugmalari.
-    """
+def get_support_inline_keyboard(requests: list) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
 
-    for req in requests[:5]:  # Ko'pi bilan 5 ta ko'rsatamiz
+    for req in requests[:5]:
         builder.row(
             InlineKeyboardButton(
                 text=f"ID {req['id']} - Ko'rish",
@@ -88,7 +78,12 @@ def get_support_keyboard(requests: list) -> InlineKeyboardMarkup:
         )
 
     if len(requests) > 5:
-        builder.row(InlineKeyboardButton(text="Barchasini ko'rish", callback_data="support_all"))
+        builder.row(
+            InlineKeyboardButton(
+                text="Barcha so'rovlarni ko'rish",
+                callback_data="support_all_requests"
+            )
+        )
 
     builder.adjust(2)
 
@@ -96,9 +91,27 @@ def get_support_keyboard(requests: list) -> InlineKeyboardMarkup:
 
 
 def get_cancel_keyboard() -> ReplyKeyboardMarkup:
-    """
-    FSM jarayonlarida "Bekor qilish" tugmasi.
-    """
     builder = ReplyKeyboardBuilder()
     builder.add(KeyboardButton(text="❌ Bekor qilish"))
-    return builder.as_markup(resize_keyboard=True, one_time_keyboard=True)
+    return builder.as_markup(
+        resize_keyboard=True,
+        one_time_keyboard=True
+    )
+
+
+def get_mode_selection_keyboard() -> ReplyKeyboardMarkup:
+    builder = ReplyKeyboardBuilder()
+
+    builder.row(
+        KeyboardButton(text="🔍 To'liq tekshirish"),
+        KeyboardButton(text="🔗 Faqat havola"),
+    )
+    builder.row(
+        KeyboardButton(text="📄 Fayl tekshirish"),
+        KeyboardButton(text="⛔ Tekshirishni to'xtatish"),
+    )
+
+    return builder.as_markup(
+        resize_keyboard=True,
+        one_time_keyboard=False
+    )

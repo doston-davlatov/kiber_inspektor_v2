@@ -1,11 +1,8 @@
+# main.py
 import asyncio
 import logging
-import os
-
-from aiohttp import web
 from aiogram import Bot, Dispatcher
 from aiogram.client.default import DefaultBotProperties
-from aiogram.webhook.aiohttp_server import SimpleRequestHandler, setup_application
 from aiogram.fsm.storage.memory import MemoryStorage
 
 from config import config
@@ -21,125 +18,49 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-WEBHOOK_PATH = "/webhook/"
-
-# WEBHOOK_URL ni xavfsiz qayta ishlash
-webhook_base = config.WEBHOOK_URL or ""
-WEBHOOK_URL = f"{webhook_base.rstrip('/')}{WEBHOOK_PATH}" if webhook_base else None
-
-WEBHOOK_SECRET = config.WEBHOOK_SECRET or "kiber-inspektor-secret-2025"
-
 async def on_startup(bot: Bot):
-    logger.info("on_startup boshlandi")
+    logger.info("Bot ishga tushmoqda (polling)")
     await db.initialize()
     
     try:
         nltk.download('punkt', quiet=True)
         nltk.download('punkt_tab', quiet=True)
         nltk.download('stopwords', quiet=True)
-        logger.info("NLTK ma'lumotlari yuklandi")
     except Exception as e:
-        logger.warning(f"NLTK download xatosi: {e}")
+        logger.warning(f"NLTK yuklashda xato: {e}")
 
-    if WEBHOOK_URL:
-        try:
-            await bot.set_webhook(
-                url=WEBHOOK_URL,
-                secret_token=WEBHOOK_SECRET,
-                drop_pending_updates=True,
-                allowed_updates=["message", "callback_query", "my_chat_member"]
-            )
-            logger.info(f"Webhook muvaffaqiyatli o'rnatildi: {WEBHOOK_URL}")
-        except Exception as e:
-            logger.error(f"Webhook o'rnatishda xato: {e}", exc_info=True)
-    else:
-        logger.warning("WEBHOOK_URL sozlanmagan → webhook o'rnatilmaydi")
-
+    logger.info("Polling rejimi boshlandi")
 
 async def on_shutdown(bot: Bot):
-    logger.info("on_shutdown boshlandi")
-    if WEBHOOK_URL:
-        try:
-            await bot.delete_webhook(drop_pending_updates=True)
-            logger.info("Webhook o'chirildi")
-        except Exception as e:
-            logger.warning(f"Webhook o'chirishda xato: {e}")
-    
+    logger.info("Bot to'xtamoqda")
     await db.close()
     logger.info("DB ulanishi yopildi")
 
-
 async def main():
-    try:
-        logger.info("main() boshlandi")
-        
-        bot = Bot(
-            token=config.BOT_TOKEN,
-            default=DefaultBotProperties(parse_mode="HTML")
-        )
-        logger.info("Bot yaratildi")
+    bot = Bot(
+        token=config.BOT_TOKEN,
+        default=DefaultBotProperties(parse_mode="HTML")
+    )
+    await bot.delete_webhook(drop_pending_updates=True)
+    logger.info("Webhook o'chirildi (agar mavjud bo'lsa)")
+    
+    dp = Dispatcher(storage=MemoryStorage())
+    dp.message.middleware(rate_limiter_middleware)
+    dp.include_router(router)
 
-        dp = Dispatcher(storage=MemoryStorage())
-        logger.info("Dispatcher yaratildi")
+    dp.startup.register(on_startup)
+    dp.shutdown.register(on_shutdown)
 
-        dp.message.middleware(rate_limiter_middleware)
-        logger.info("Rate limiter ulandi")
-
-        dp.include_router(router)
-        logger.info("Router ulandi")
-
-        # Aiohttp app yaratish
-        app = web.Application()
-        logger.info("Aiohttp app yaratildi")
-        app.router.add_static('/static/', path='static', name='static')
-        
-        # Root yo'lida index.html ni qaytarish
-        async def serve_index(request):
-            index_path = os.path.join('static', 'index.html')
-            if os.path.exists(index_path):
-                return web.FileResponse(index_path)
-            else:
-                return web.Response(text="Index sahifasi topilmadi (static/index.html yo'q)", status=404)
-
-        app.router.add_get('/', serve_index)
-        logger.info("Statik fayllar va index.html yo'li qo'shildi")
-
-        # Webhook handler
-        webhook_handler = SimpleRequestHandler(
-            dispatcher=dp,
-            bot=bot,
-            secret_token=WEBHOOK_SECRET,
-        )
-        webhook_handler.register(app, path=WEBHOOK_PATH)
-        setup_application(app, dp, bot=bot)
-        logger.info("Webhook handler ro'yxatdan o'tkazildi")
-
-        app.on_startup.append(lambda _: asyncio.create_task(on_startup(bot)))
-        app.on_shutdown.append(lambda _: asyncio.create_task(on_shutdown(bot)))
-        logger.info("Startup/shutdown handlerlar qo'shildi")
-
-        runner = web.AppRunner(app)
-        await runner.setup()
-        logger.info("Runner setup bo'ldi")
-
-        port = int(os.getenv("PORT", 10000))
-        logger.info(f"PORT qiymati: {port}")
-
-        site = web.TCPSite(runner, host="0.0.0.0", port=port)
-        await site.start()
-        logger.info(f"Server ochildi: 0.0.0.0:{port}{WEBHOOK_PATH}")
-
-        await asyncio.Event().wait()
-
-    except Exception as e:
-        logger.error("main() ichida CRITICAL xato", exc_info=True)
-        raise
-
+    await dp.start_polling(
+        bot,
+        allowed_updates=["message", "callback_query", "my_chat_member"],
+        drop_pending_updates=True
+    )
 
 if __name__ == "__main__":
     try:
         asyncio.run(main())
     except (KeyboardInterrupt, SystemExit):
-        logger.info("Bot to'xtatildi (KeyboardInterrupt yoki SystemExit)")
+        logger.info("Bot to'xtatildi")
     except Exception as e:
         logger.error(f"Dastur ishga tushmadi: {e}", exc_info=True)
